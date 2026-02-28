@@ -4,8 +4,12 @@ import pandas as pd
 # --- Configuración de la página ---
 st.set_page_config(page_title="Calculadora de Interés Compuesto", page_icon="📈", layout="centered")
 
-# --- Función de Cálculo Principal ---
-def calcular_crecimiento_anual(tasa_anual, monto_inicial, tramos, frecuencia_str):
+# --- Función de Cálculo (Motor Financiero) ---
+def calcular_proyeccion(tasa_anual, monto_inicial, tramos, frecuencia_str):
+    """
+    Calcula la proyección financiera iterando sobre una lista de 'tramos'.
+    Cada tramo tiene una duración en años y una aportación específica.
+    """
     frecuencias = {
         "Diaria": 365,
         "Semanal": 52,
@@ -25,27 +29,27 @@ def calcular_crecimiento_anual(tasa_anual, monto_inicial, tramos, frecuencia_str
     total_invertido = monto_inicial
     ano_actual = 1
     
-    # Iteramos sobre cada etapa definida por el usuario
+    # Iteramos sobre cada tramo definido (sea 1 en modo simple o N en avanzado)
     for tramo in tramos:
-        anos_tramo = tramo["anos"]
+        duracion_tramo = int(tramo["anos"])
         aportacion_tramo = tramo["aportacion"]
         
-        for _ in range(int(anos_tramo)):
-            # 1. El dinero que ya estaba en la cuenta crece todo el año con capitalización diaria
+        for _ in range(duracion_tramo):
+            # 1. El capital acumulado crece con capitalización diaria todo el año
             balance_actual = balance_actual * (1 + tasa_diaria)**365
             
-            # 2. Las aportaciones nuevas de este año crecen según su frecuencia
+            # 2. Se suman las nuevas aportaciones del año (con sus rendimientos intra-anuales)
             if aportacion_tramo > 0:
                 nuevo_valor_depositos = aportacion_tramo * (((1 + tasa_efectiva_periodo)**depositos_por_ano - 1) / tasa_efectiva_periodo)
                 balance_actual += nuevo_valor_depositos
                 total_invertido += (aportacion_tramo * depositos_por_ano)
             
-            # Guardamos el registro del año para la tabla/gráfica
+            # Guardamos el registro
             datos.append({
                 "Año": ano_actual,
-                "Aportación Anual": aportacion_tramo * depositos_por_ano,
-                "Total Invertido": round(total_invertido, 2),
-                "Intereses Acumulados": round(balance_actual - total_invertido, 2),
+                "Aportación Mensual/Quincenal/etc": aportacion_tramo,
+                "Total Invertido (Bolsillo)": round(total_invertido, 2),
+                "Intereses Ganados": round(balance_actual - total_invertido, 2),
                 "Balance Total": round(balance_actual, 2)
             })
             ano_actual += 1
@@ -53,87 +57,98 @@ def calcular_crecimiento_anual(tasa_anual, monto_inicial, tramos, frecuencia_str
     return pd.DataFrame(datos), balance_actual, total_invertido
 
 # --- Interfaz de Usuario (UI) ---
-st.title("📈 Calculadora Avanzada de Interés Compuesto")
-st.write("Modela tu crecimiento financiero con capitalización diaria y ajusta tus aportaciones a lo largo del tiempo.")
+st.title("📈 Proyección de Interés Compuesto")
 
-# --- Menú Lateral (Sidebar) ---
+# --- BARRA LATERAL (Inputs) ---
 st.sidebar.header("Parámetros Generales")
 
-monto_inicial = st.sidebar.number_input("Monto Inicial ($):", min_value=0.0, value=0.0, step=1000.0)
-anos_totales = st.sidebar.slider("Años totales de inversión:", min_value=1, max_value=50, value=40, step=1)
-tasa_anual_porcentaje = st.sidebar.slider("Tasa de interés anual (%):", min_value=0.0, max_value=100.0, value=5.0, step=0.1)
-frecuencia_str = st.sidebar.selectbox("Frecuencia de aportación:", ["Diaria", "Semanal", "Quincenal", "Mensual", "Anual"], index=2)
+# 1. Variables Comunes (siempre visibles)
+monto_inicial = st.sidebar.number_input("Monto Inicial ($):", min_value=0.0, value=10000.0, step=1000.0)
+anos_totales = st.sidebar.slider("Duración Total (Años):", min_value=1, max_value=60, value=30)
+tasa_anual_pct = st.sidebar.number_input("Tasa Anual Esperada (%):", min_value=0.0, max_value=100.0, value=10.0, step=0.5)
+frecuencia = st.sidebar.selectbox("Frecuencia de Aportación:", ["Mensual", "Quincenal", "Semanal", "Diaria", "Anual"], index=0)
 
-st.sidebar.divider()
+st.sidebar.markdown("---")
 
-# --- Lógica de Configuración Avanzada ---
-avanzado = st.sidebar.checkbox("⚙️ Configuración Avanzada (Desglosar por etapas)")
+# 2. Selector de Modo
+modo_avanzado = st.sidebar.checkbox("🛠️ Configuración Avanzada (Etapas variables)")
 
-tramos = [] # Aquí guardaremos los años y montos de cada etapa
-error_en_anos = False
+tramos = []
+error_config = False
 
-if avanzado:
-    st.sidebar.write(f"**Años a distribuir:** {anos_totales}")
-    num_tramos = st.sidebar.number_input("¿En cuántas etapas dividirás tu inversión?", min_value=1, max_value=10, value=2, step=1)
+if not modo_avanzado:
+    # --- MODO SIMPLE ---
+    st.sidebar.subheader("Configuración Simple")
+    aportacion_simple = st.sidebar.number_input(f"Aportación {frecuencia.lower()} constante ($):", min_value=0.0, value=2000.0, step=100.0)
     
-    anos_acumulados = 0
-    for i in range(int(num_tramos)):
-        with st.sidebar.expander(f"Etapa {i+1}", expanded=True):
-            # Para la última etapa, sugerimos los años restantes por defecto
-            if i == num_tramos - 1:
-                anos_restantes = max(1, anos_totales - anos_acumulados)
-                anos_tramo = st.number_input(f"Años", min_value=1, value=int(anos_restantes), key=f"ano_{i}")
-            else:
-                anos_tramo = st.number_input(f"Años", min_value=1, value=10, key=f"ano_{i}")
-            
-            aportacion_tramo = st.number_input(f"Aportación {frecuencia_str.lower()} ($)", min_value=0.0, value=5000.0, step=500.0, key=f"aport_{i}")
-            
-            tramos.append({"anos": anos_tramo, "aportacion": aportacion_tramo})
-            anos_acumulados += anos_tramo
-            
-    # Validación dinámica
-    if anos_acumulados != anos_totales:
-        st.sidebar.error(f"⚠️ La suma de las etapas ({anos_acumulados} años) no coincide con el total de años ({anos_totales}).")
-        error_en_anos = True
+    # Creamos un único tramo que dura todo el periodo
+    tramos.append({
+        "anos": anos_totales, 
+        "aportacion": aportacion_simple
+    })
+
 else:
-    # Si no es avanzado, es un solo tramo que dura todos los años
-    deposito_unico = st.sidebar.number_input(f"Cantidad de aportación {frecuencia_str.lower()} ($):", min_value=0.0, value=5000.0, step=500.0)
-    tramos = [{"anos": anos_totales, "aportacion": deposito_unico}]
+    # --- MODO AVANZADO ---
+    st.sidebar.subheader("Desglose por Etapas")
+    st.sidebar.info(f"Debes distribuir los {anos_totales} años totales en diferentes etapas.")
+    
+    num_etapas = st.sidebar.number_input("Número de etapas:", min_value=1, max_value=10, value=2)
+    
+    anos_asignados = 0
+    
+    for i in range(int(num_etapas)):
+        st.sidebar.markdown(f"**Etapa {i+1}**")
+        
+        # Sugerir años restantes para la última etapa
+        default_anos = 5
+        if i == num_etapas - 1:
+            default_anos = max(1, anos_totales - anos_asignados)
+            
+        a_tramo = st.sidebar.number_input(f"Duración (años) - Etapa {i+1}", min_value=1, value=int(default_anos), key=f"a_{i}")
+        p_tramo = st.sidebar.number_input(f"Aportación {frecuencia.lower()} ($) - Etapa {i+1}", min_value=0.0, value=0.0, step=500.0, key=f"p_{i}")
+        
+        tramos.append({"anos": a_tramo, "aportacion": p_tramo})
+        anos_asignados += a_tramo
+    
+    # Validación de años
+    if anos_asignados != anos_totales:
+        st.error(f"⚠️ Error en tiempos: Tus etapas suman {anos_asignados} años, pero definiste un total de {anos_totales} años arriba. Ajusta las etapas.")
+        error_config = True
 
-# --- Ejecución y Resultados ---
-tasa_anual_decimal = tasa_anual_porcentaje / 100
-
+# --- BOTÓN DE CÁLCULO ---
 if st.button("Calcular Proyección", type="primary"):
-    if error_en_anos:
-        st.error("Por favor, corrige los años en la configuración avanzada para que sumen exactamente el total de la inversión.")
+    
+    if error_config:
+        st.warning("Por favor corrige la suma de años en la configuración avanzada para continuar.")
     else:
-        df_resultados, balance_final, invertido_final = calcular_crecimiento_anual(
-            tasa_anual_decimal, monto_inicial, tramos, frecuencia_str
-        )
+        # Convertir tasa a decimal
+        tasa_decimal = tasa_anual_pct / 100
         
-        intereses_totales = balance_final - invertido_final
+        # Ejecutar cálculo
+        df, final, invertido = calcular_proyeccion(tasa_decimal, monto_inicial, tramos, frecuencia)
+        ganancia = final - invertido
         
-        # --- Mostrar Métricas ---
-        col1, col2, col3 = st.columns(3)
-        col1.metric("Capital Invertido", f"${invertido_final:,.2f}")
-        col2.metric("Intereses Ganados", f"${intereses_totales:,.2f}")
-        col3.metric("Balance Final", f"${balance_final:,.2f}")
+        # --- RESULTADOS ---
+        st.markdown("### Resumen Financiero")
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Dinero de tu bolsillo", f"${invertido:,.2f}")
+        c2.metric("Intereses Generados", f"${ganancia:,.2f}", delta="Ganancia")
+        c3.metric("Monto Final Total", f"${final:,.2f}")
         
         st.divider()
         
-        # --- Gráfica ---
-        st.subheader("Evolución de tu Capital")
-        df_grafica = df_resultados.set_index("Año")[["Total Invertido", "Intereses Acumulados"]]
-        st.area_chart(df_grafica)
+        # Gráfica de Área
+        st.subheader("Trayectoria del Patrimonio")
+        st.area_chart(df.set_index("Año")[["Total Invertido (Bolsillo)", "Intereses Ganados"]])
         
-        # --- Tabla de Amortización ---
-        st.subheader("Desglose Año por Año")
-        st.dataframe(
-            df_resultados.set_index("Año").style.format({
-                "Aportación Anual": "${:,.2f}",
-                "Total Invertido": "${:,.2f}",
-                "Intereses Acumulados": "${:,.2f}",
-                "Balance Total": "${:,.2f}"
-            }), 
-            use_container_width=True
-        )
+        # Tabla detallada
+        with st.expander("Ver tabla de datos detallada"):
+            st.dataframe(
+                df.style.format({
+                    "Total Invertido (Bolsillo)": "${:,.2f}", 
+                    "Intereses Ganados": "${:,.2f}", 
+                    "Balance Total": "${:,.2f}",
+                    "Aportación Mensual/Quincenal/etc": "${:,.2f}"
+                })
+    )
+        
